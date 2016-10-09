@@ -1,0 +1,13 @@
+RPCMessenger működés
+A kliensek először bejelentkeznek a szerverre egy adott névvel.
+A szerver ekkor megnézi van-e, duplikált név.
+	Ha igen, ezt jelzi a kliensnek. (lehet engedélyezett is a név, véglis az id a lényeg)
+	Ha nem, a bejelntkezés sikeres, a szerver felveszi a bejelentkezettek sorába klienst. A kliens ekkor kap egy ID-t, illetve egy szerver timestampet.
+
+A bejelentkezett kliens üzenetet tud küldeni a szervernek. Ehhez biztosítja az ID-jét, az üzenetet és egy szerver timestampet.
+A szerver ekkor az üzenetet eltárolja egy time stamp által rendezett sorba.
+
+A kliens megkérdezheti a szervert a jelenlegi üzenetekről. A kérdésben szerepelnie kell az utolsó lekérdezett üzenet timestampjének.
+A szerver elküldi az összes üzenetet az adott timestamp után.
+
+A szerver a régóta be nem jelentekezett klienseket kidobja.

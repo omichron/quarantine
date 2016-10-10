@@ -1,0 +1,36 @@
+﻿<Window x:Class="GRPCMessenger.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:GRPCMessenger"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="405" Width="505" Closing="Window_Closing">
+    <StackPanel>
+        <StackPanel Orientation="Horizontal">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="User" Width="50"/>
+                    <TextBox Text="Unknown" x:Name="texUsername" Width="390"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Host" Width="50"/>
+                    <TextBox Text="192.168.1.210" x:Name="textHost"  Width="390"/>
+                </StackPanel>
+            </StackPanel>
+            <Button x:Name="buttonConnect" Content="Connect" Click="buttonConnect_Click"/>
+        </StackPanel>
+        <RichTextBox Height="310" x:Name="textMessages" IsEnabled="False">
+            <RichTextBox.Resources>
+                <Style TargetType="{x:Type Paragraph}">
+                    <Setter Property="Margin" Value="0"/>
+                </Style>
+            </RichTextBox.Resources>
+        </RichTextBox>
+        <StackPanel Orientation="Horizontal">
+            <TextBox Width="450" x:Name="textMessageToSend"/>
+            <Button x:Name="buttonSend" Content="Send" Click="buttonSend_Click" Width="40"/>
+        </StackPanel>
+    </StackPanel>
+
+</Window>

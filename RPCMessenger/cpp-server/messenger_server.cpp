@@ -9,6 +9,8 @@
 #include <grpc++/grpc++.h>
 #include <sys/time.h>
 #include <algorithm>
+#include <unordered_map>
+#include <mutex>
 
 #include "messenger.grpc.pb.h"
 
@@ -99,25 +101,23 @@ enum class CallStatus
 	FINISH 
 };
 
-enum class RpcType
-{
-	LOGIN,
-	SEND_TEXT_MESSAGE,
-	REQUEST_PENDING_MESSAGES,
-	NONE
-};
 
-class CallDataWrapper
+class ProceedFunctionWrapper
 {
-protected:
-	RpcType rpcType = RpcType::NONE;
-	void* callData = nullptr;
-
 public:
-	CallDataWrapper(RpcType _rpcType, void* _callData)
-		: rpcType(_rpcType)
-		, callData(_callData)
+	using proceed_function = void(*)(void*);
+private:
+	proceed_function m_function;
+	void* m_argument;
+public:
+	ProceedFunctionWrapper(proceed_function function, void* argument)
+		:	m_function(function)
+		,	m_argument(argument)
+	{}
+
+	void Proceed()
 	{
+		m_function(m_argument);
 	}
 };
 
@@ -136,26 +136,23 @@ protected:
 	ServerAsyncResponseWriter<TResponse> m_responseWriter;
 
 	CallStatus m_currentStatus;
-	CallDataWrapper* m_wrapper;
-
 	RequestFunction m_requestFunction;
+
+	ProceedFunctionWrapper* m_functionWrapper;
 	
 	~CallDataBase()
 	{
-		delete m_wrapper;
-		m_wrapper = nullptr;
-		std::cout << "Wrapper deleted" << std::endl;
+		delete m_functionWrapper;
 	}
 
-	CallDataBase(Messenger::AsyncService* pService, ServerCompletionQueue* pCompletionQueue, RpcType rpcType, RequestFunction requestFunction)
+	CallDataBase(Messenger::AsyncService* pService, ServerCompletionQueue* pCompletionQueue, RequestFunction requestFunction)
 		:   m_pAsyncService(pService)
 		,	m_pCompletionQueue(pCompletionQueue)
 		,   m_responseWriter(&m_context)
 		,	m_currentStatus(CallStatus::CREATE)
-		,	m_wrapper(nullptr)
 		,	m_requestFunction(requestFunction)
 	{
-		m_wrapper = new CallDataWrapper(rpcType, this);
+		m_functionWrapper = new ProceedFunctionWrapper(&ProceedWrapper, this);
 		Proceed();
 	}
 public:
@@ -165,23 +162,23 @@ public:
 		{
 			case CallStatus::CREATE:
 			{
-				std::cout << "Creating..." << std::endl;
+				//std::cout << "Creating..." << std::endl;
 				m_currentStatus = CallStatus::PROCESS;
-				(m_pAsyncService->*m_requestFunction)(&m_context, &m_request, &m_responseWriter, m_pCompletionQueue, m_pCompletionQueue, m_wrapper);
+				(m_pAsyncService->*m_requestFunction)(&m_context, &m_request, &m_responseWriter, m_pCompletionQueue, m_pCompletionQueue, m_functionWrapper);
 				break;
 			}
 			case CallStatus::PROCESS:
 			{
-				std::cout << "Processing..." << std::endl;
+				//std::cout << "Processing..." << std::endl;
 				new TDerived(m_pAsyncService, m_pCompletionQueue);
 				auto status = (static_cast<TDerived*>(this))->OnProcess();
 				m_currentStatus = CallStatus::FINISH;
-				m_responseWriter.Finish(m_response, status, m_wrapper);
+				m_responseWriter.Finish(m_response, status, m_functionWrapper);
 				break;
 			}
 			case CallStatus::FINISH:
 			{
-				std::cout << "Finishing..." << std::endl;
+				//std::cout << "Finishing..." << std::endl;
 				delete this;
 				break;
 			}
@@ -193,6 +190,11 @@ public:
 			}
 		}
 	}
+
+	static void ProceedWrapper(void* derived)
+	{
+		static_cast<TDerived*>(derived)->Proceed();
+	}
 };
 
 
@@ -201,7 +203,7 @@ class LoginCallData : public CallDataBase<LoginRequest, LoginReply, LoginCallDat
 {
 public:
 	LoginCallData(Messenger::AsyncService* pService, ServerCompletionQueue* pCompletionQueue)
-		: CallDataBase<LoginRequest, LoginReply, LoginCallData>(pService, pCompletionQueue, RpcType::LOGIN, &Messenger::AsyncService::RequestLogin)
+		: CallDataBase<LoginRequest, LoginReply, LoginCallData>(pService, pCompletionQueue, &Messenger::AsyncService::RequestLogin)
 	{}
 
 	Status OnProcess()
@@ -223,7 +225,7 @@ class SendTextMessageCallData : public CallDataBase<TextMessage, ResultReply, Se
 {
 public:
 	SendTextMessageCallData(Messenger::AsyncService* pService, ServerCompletionQueue* pCompletionQueue)
-		: CallDataBase<TextMessage, ResultReply, SendTextMessageCallData>(pService, pCompletionQueue, RpcType::SEND_TEXT_MESSAGE, &Messenger::AsyncService::RequestSendTextMessage)
+		: CallDataBase<TextMessage, ResultReply, SendTextMessageCallData>(pService, pCompletionQueue, &Messenger::AsyncService::RequestSendTextMessage)
 	{}
 
 	Status OnProcess()
@@ -238,7 +240,7 @@ class RequestPendingMessagesCallData : public CallDataBase<PendingMessagesReques
 {
 public:
 	RequestPendingMessagesCallData(Messenger::AsyncService* pService, ServerCompletionQueue* pCompletionQueue)
-		: CallDataBase<PendingMessagesRequest, PendingMessagesReply, RequestPendingMessagesCallData>(pService, pCompletionQueue, RpcType::REQUEST_PENDING_MESSAGES, &Messenger::AsyncService::RequestRequestPendingMessages)
+		: CallDataBase<PendingMessagesRequest, PendingMessagesReply, RequestPendingMessagesCallData>(pService, pCompletionQueue, &Messenger::AsyncService::RequestRequestPendingMessages)
 	{}
 
 	Status OnProcess()
@@ -251,29 +253,6 @@ public:
 			m_response.add_text_messages(it->second);
 		}
 		return Status::OK;
-	}
-};
-
-class CallDataProcessor : public CallDataWrapper
-{
-public:
-	void Proceed()
-	{
-		switch (rpcType)
-		{
-		case RpcType::LOGIN:
-			static_cast<LoginCallData*>(callData)->Proceed();
-			break;
-		case RpcType::SEND_TEXT_MESSAGE:
-			static_cast<SendTextMessageCallData*>(callData)->Proceed();
-			break;
-		case RpcType::REQUEST_PENDING_MESSAGES:
-			static_cast<RequestPendingMessagesCallData*>(callData)->Proceed();
-			break;
-		default:
-			std::cout << "Error, rpc type code: " << (int)rpcType << std::endl;
-			break;
-		}
 	}
 };
 
@@ -313,9 +292,8 @@ public:
 		for (;;)
 		{
 			auto result = m_completionQueue->Next(&tag, &ok);
-			if (!ok || !result) break; //TODO: Check for undeleted items
-			auto processor = static_cast<CallDataProcessor*>(tag);
-			processor->Proceed();
+			if (!ok || !result) break;
+			static_cast<ProceedFunctionWrapper*>(tag)->Proceed();
 		}
 	}
 };
